@@ -15,7 +15,7 @@ YYDS_API_BASE = "https://maliapi.215.im/v1"
 config = {}
 _cf_domain_index = 0
 _cloudmail_domain_index = 0
-_OWN_NAMES = {'cloudmail_get_email_and_token', 'get_messages', 'cloudflare_get_messages', 'get_yyds_api_key', 'yyds_generate_username', 'yyds_get_domains', 'yyds_get_email_and_token', 'yyds_get_oai_code', 'get_email_provider', 'cloudflare_get_domains', 'extract_verification_code', 'get_cloudflare_api_base', 'cloudflare_apply_auth_params', 'duckmail_get_oai_code', 'create_account', 'get_yyds_jwt', 'get_message_detail', 'yyds_create_account', 'get_duckmail_api_key', 'get_cloudflare_path', 'cloudflare_create_account', 'cloudflare_get_token', 'cloudflare_get_oai_code', 'get_cloudmail_public_token', 'generate_username', 'yyds_get_message_detail', 'cloudflare_next_default_domain', 'yyds_get_messages', 'yyds_get_token', 'get_domains', 'get_token', 'cloudflare_create_temp_address', 'get_cloudflare_api_key', 'get_cloudmail_path', 'get_cloudmail_api_base', 'cloudmail_get_oai_code', 'cloudflare_build_headers', 'cloudflare_is_admin_create_path', 'cloudmail_next_domain', 'cloudflare_get_message_detail', 'cloudmail_get_messages', 'get_user_agent', 'yyds_pick_domain', '_pick_list_payload', 'get_email_and_token', 'get_oai_code', 'get_cloudflare_auth_mode', 'pick_domain'}
+_OWN_NAMES = {'cloudmail_get_email_and_token', 'get_messages', 'cloudflare_get_messages', 'get_yyds_api_key', 'yyds_generate_username', 'yyds_get_domains', 'yyds_get_email_and_token', 'yyds_get_oai_code', 'get_email_provider', 'cloudflare_get_domains', 'extract_verification_code', 'get_cloudflare_api_base', 'cloudflare_apply_auth_params', 'duckmail_get_oai_code', 'create_account', 'get_yyds_jwt', 'get_message_detail', 'yyds_create_account', 'get_duckmail_api_key', 'get_cloudflare_path', 'cloudflare_create_account', 'cloudflare_get_token', 'cloudflare_get_oai_code', 'get_cloudmail_public_token', 'generate_username', 'yyds_get_message_detail', 'cloudflare_next_default_domain', 'yyds_get_messages', 'yyds_get_token', 'get_domains', 'get_token', 'cloudflare_create_temp_address', 'get_cloudflare_api_key', 'get_cloudmail_path', 'get_cloudmail_api_base', 'cloudmail_get_oai_code', 'cloudflare_build_headers', 'cloudflare_is_admin_create_path', 'cloudmail_next_domain', 'cloudflare_get_message_detail', 'cloudmail_get_messages', 'get_user_agent', 'yyds_pick_domain', '_pick_list_payload', 'get_email_and_token', 'get_oai_code', 'get_cloudflare_auth_mode', 'pick_domain', 'yyds_cleanup_inbox', 'yyds_delete_account', 'delete_mailbox', 'delete_mailbox_by_address'}
 
 
 def bind_runtime(namespace):
@@ -179,7 +179,7 @@ def cloudflare_get_messages(api_base, token):
 def cloudflare_get_oai_code(
     dev_token,
     email,
-    timeout=180,
+    timeout=300,
     poll_interval=3,
     log_callback=None,
     cancel_callback=None,
@@ -352,7 +352,7 @@ def cloudmail_get_messages(address):
 def cloudmail_get_oai_code(
     dev_token,
     email,
-    timeout=180,
+    timeout=300,
     poll_interval=3,
     log_callback=None,
     cancel_callback=None,
@@ -443,7 +443,7 @@ def create_account(address, password, api_key=None, expires_in=0):
 def duckmail_get_oai_code(
     dev_token,
     email,
-    timeout=180,
+    timeout=300,
     poll_interval=3,
     log_callback=None,
     cancel_callback=None,
@@ -614,7 +614,7 @@ def get_messages(token):
 def get_oai_code(
     dev_token,
     email,
-    timeout=180,
+    timeout=300,
     poll_interval=3,
     log_callback=None,
     cancel_callback=None,
@@ -784,6 +784,49 @@ def yyds_get_messages(address, token=None, api_key=None, jwt=None):
     return []
 
 
+def yyds_cleanup_inbox(address, api_key=None, jwt=None):
+    """清空 YYDS 收件箱中的所有邮件"""
+    key = api_key or get_yyds_api_key()
+    token = jwt or get_yyds_jwt()
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    elif key:
+        headers["X-API-Key"] = key
+    else:
+        return 0
+    deleted = 0
+    try:
+        resp = http_get(
+            f"{YYDS_API_BASE}/messages",
+            params={"address": address},
+            headers=headers,
+        )
+        data = resp.json()
+        messages = []
+        if data.get("success"):
+            messages = data.get("data", {}).get("messages", []) if isinstance(data.get("data"), dict) else data.get("data", [])
+        for msg in messages:
+            msg_id = msg.get("id") or msg.get("messageId")
+            if not msg_id:
+                continue
+            try:
+                dresp = http_delete(
+                    f"{YYDS_API_BASE}/messages/{msg_id}",
+                    headers=headers,
+                    params={"address": address},
+                )
+                if dresp.status_code < 400:
+                    deleted += 1
+            except Exception:
+                pass
+        if deleted > 0:
+            print(f"[mail] yyds 清理收件箱: {address} 删除了 {deleted} 封邮件")
+    except Exception as e:
+        print(f"[mail] yyds 清理收件箱失败: {e}")
+    return deleted
+
+
 def yyds_delete_account(address=None, account_id=None, api_key=None, jwt=None):
     """删除 YYDS 临时邮箱 (DELETE /v1/accounts/{id})"""
     key = api_key or get_yyds_api_key()
@@ -839,7 +882,7 @@ def delete_mailbox_by_address(address):
 def yyds_get_oai_code(
     token,
     address,
-    timeout=180,
+    timeout=300,
     poll_interval=3,
     log_callback=None,
     jwt=None,

@@ -30,6 +30,7 @@ class RegistrationOperations:
     cancelled_exception: type
     retry_exception: type
     delete_mailbox: Callable[[str], bool] = lambda address: False
+    cleanup_inbox: Callable[[str], int] = lambda address: 0
 
 
 @dataclass
@@ -89,6 +90,13 @@ def register_one_account(callbacks, ops, enable_nsfw=True, max_mail_retry=3):
         callbacks.log(f"[Debug] 邮箱credential(jwt): {dev_token}")
         if not ops.save_mail_credential(email, dev_token):
             callbacks.log("[!] 邮箱凭据保存失败，注册继续，但已明确记录该异常")
+        # 清空收件箱中残留的旧邮件，避免误取到上次失败的验证码
+        try:
+            cleaned = ops.cleanup_inbox(email)
+            if cleaned > 0:
+                callbacks.log(f"[*] 清理了 {cleaned} 封残留邮件")
+        except Exception as e:
+            callbacks.log(f"[!] 清空收件箱失败(不影响流程): {e}")
         callbacks.log("[*] 3. 拉取验证码")
         try:
             code = ops.fill_code_and_submit(email, dev_token)
