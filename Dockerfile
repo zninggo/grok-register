@@ -16,7 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# 默认配置文件路径
-ENV CONFIG_PATH=/app/data/config.json
+# 数据目录
+RUN mkdir -p /app/data
 
-CMD ["python", "grok_register_ttk.py"]
+ENV CONFIG_PATH=/app/data/config.json
+ENV DISPLAY=:99
+
+# 无头模式入口
+CMD ["python", "headless_register.py"]
