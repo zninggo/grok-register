@@ -278,7 +278,7 @@ def _bind_registration_browser():
 
 
 LocalAuthProxyBridge = _browser_runtime.LocalAuthProxyBridge
-for _name in ['get_configured_proxy', 'get_proxies', '_parse_proxy_url', '_safe_proxy_port', '_proxy_has_auth', '_strip_proxy_auth', '_proxy_endpoint_terms', 'is_proxy_connection_error', 'page_has_proxy_error', '_ReusableThreadingTCPServer', '_proxy_recv_until_headers', '_proxy_relay', '_LocalAuthProxyBridgeHandler', 'LocalAuthProxyBridge', 'prepare_browser_proxy', 'apply_browser_proxy_option', 'create_browser_options', '_build_request_kwargs', 'http_get', 'http_post']:
+for _name in ['get_configured_proxy', 'get_proxies', '_parse_proxy_url', '_safe_proxy_port', '_proxy_has_auth', '_strip_proxy_auth', '_proxy_endpoint_terms', 'is_proxy_connection_error', 'page_has_proxy_error', '_ReusableThreadingTCPServer', '_proxy_recv_until_headers', '_proxy_relay', '_LocalAuthProxyBridgeHandler', 'LocalAuthProxyBridge', 'prepare_browser_proxy', 'apply_browser_proxy_option', 'create_browser_options', '_build_request_kwargs', 'http_get', 'http_post', 'http_delete']:
     if _name.startswith("_") and _name in {"_ReusableThreadingTCPServer", "_LocalAuthProxyBridgeHandler", "_proxy_recv_until_headers", "_proxy_relay"}:
         continue
     if _name != "LocalAuthProxyBridge":
@@ -605,6 +605,21 @@ def maybe_export_cpa_xai_after_success(email, password, sso="", log_callback=Non
 
 
 
+def _delete_mailbox_after_success(address, log_callback=None):
+    try:
+        from mail_service import delete_mailbox_by_address
+        ok = delete_mailbox_by_address(address)
+        if ok and log_callback:
+            log_callback(f"[+] 临时邮箱已清理: {address}")
+        elif not ok and log_callback:
+            log_callback(f"[!] 临时邮箱清理失败(不影响结果): {address}")
+        return ok
+    except Exception as e:
+        if log_callback:
+            log_callback(f"[!] 临时邮箱清理异常(不影响结果): {e}")
+        return False
+
+
 def _save_mail_credential(email, credential, log_callback=None):
     from account_outputs import save_mail_credential
     try:
@@ -655,6 +670,7 @@ def run_registration_common(count, log_callback, cancel_callback, accounts_outpu
             log_callback=log_callback, cancel_callback=cancel_callback,
         ),
         cleanup=lambda reason: cleanup_runtime_memory(log_callback=log_callback, reason=reason),
+        delete_mailbox=lambda address: _delete_mailbox_after_success(address, log_callback),
         sleep=lambda seconds: sleep_with_cancel(seconds, cancel_callback),
         cancelled_exception=RegistrationCancelled,
         retry_exception=AccountRetryNeeded,

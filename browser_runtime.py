@@ -189,3 +189,15 @@ def http_post(url, **kwargs):
             direct.pop("proxies", None)
             return requests.post(url, **direct)
         raise
+
+
+def http_delete(url, **kwargs):
+    request_kwargs = _build_request_kwargs(**kwargs)
+    try:
+        return requests.delete(url, **request_kwargs)
+    except Exception as exc:
+        if is_proxy_connection_error(exc):
+            direct = dict(request_kwargs)
+            direct.pop("proxies", None)
+            return requests.delete(url, **direct)
+        raise

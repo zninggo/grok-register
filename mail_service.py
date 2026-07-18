@@ -783,6 +783,59 @@ def yyds_get_messages(address, token=None, api_key=None, jwt=None):
         return data.get("data", {}).get("messages", [])
     return []
 
+
+def yyds_delete_account(address=None, account_id=None, api_key=None, jwt=None):
+    """删除 YYDS 临时邮箱 (DELETE /v1/accounts/{id})"""
+    key = api_key or get_yyds_api_key()
+    token = jwt or get_yyds_jwt()
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    elif key:
+        headers["X-API-Key"] = key
+    else:
+        return False
+    # 需要 account_id，如果只有 address 需要先查询
+    target_id = account_id
+    if not target_id and address:
+        # 尝试从 inbox 查询 id
+        try:
+            resp = http_get(f"{YYDS_API_BASE}/messages", params={"address": address}, headers=headers)
+            data = resp.json()
+            if data.get("success"):
+                target_id = data.get("data", {}).get("inboxId") or data.get("data", {}).get("id")
+        except Exception:
+            pass
+    if not target_id:
+        print(f"[mail] yyds_delete_account: 无法确定 account_id (address={address})")
+        return False
+    try:
+        resp = http_delete(f"{YYDS_API_BASE}/accounts/{target_id}", headers=headers, timeout=15)
+        if resp.status_code < 400:
+            print(f"[mail] yyds 邮箱已删除: {address or target_id}")
+            return True
+        print(f"[mail] yyds 删除失败 {resp.status_code}: {resp.text[:200]}")
+        return False
+    except Exception as e:
+        print(f"[mail] yyds 删除异常: {e}")
+        return False
+
+
+def delete_mailbox(provider, address=None, account_id=None, token=None):
+    """根据 provider 类型删除邮箱"""
+    if provider == "yyds":
+        return yyds_delete_account(address=address, account_id=account_id, jwt=token)
+    # 其他 provider 暂不支持
+    print(f"[mail] delete_mailbox: provider={provider} 暂不支持自动删除")
+    return False
+
+
+def delete_mailbox_by_address(address):
+    """根据邮箱地址自动判断 provider 并删除"""
+    provider = get_email_provider()
+    return delete_mailbox(provider, address=address)
+
+
 def yyds_get_oai_code(
     token,
     address,

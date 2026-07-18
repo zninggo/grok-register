@@ -29,6 +29,7 @@ class RegistrationOperations:
     sleep: Callable[[float], None]
     cancelled_exception: type
     retry_exception: type
+    delete_mailbox: Callable[[str], bool] = lambda address: False
 
 
 @dataclass
@@ -266,6 +267,11 @@ def run_batch(count, callbacks, observer, ops, enable_nsfw=True, cleanup_interva
                 if output.saved:
                     result.success_count += 1
                     callbacks.log(f"[+] 注册并保存成功: {account.email}")
+                    # 注册成功后自动删除临时邮箱
+                    try:
+                        ops.delete_mailbox(account.email)
+                    except Exception as del_exc:
+                        callbacks.log(f"[!] 删除邮箱失败(不影响结果): {del_exc}")
                     if (
                         settings.cleanup_interval > 0
                         and result.success_count % settings.cleanup_interval == 0
