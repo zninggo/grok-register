@@ -142,6 +142,41 @@ copy config.example.json config.json
 1. **结构校验**：检查类型、枚举、URL 和数值范围。GUI 启动时只执行这一层，因此旧配置缺少当前服务所需字段时仍可打开界面修改。
 2. **运行校验**：点击“开始注册”或启动 CLI 任务时，检查当前启用功能所需的配置。
 
+### 可选多线程注册（可选）
+
+多线程默认**关闭**，需要时可配置：
+
+```json
+{
+  "multi_thread_enabled": true,
+  "multi_thread_workers": 4
+}
+```
+
+- `multi_thread_enabled`: 是否启用并发注册，默认 `false`。
+- `multi_thread_workers`: 配置线程数，默认 `4`，允许 `1`–`8`；实际 worker 数不会超过本次注册数量。
+- GUI 可通过“启用多线程”开关和线程数输入框设置；CLI 继续读取同一份 `config.json`。
+- 并发模式为每个 worker 创建独立的邮箱模块实例与注册浏览器模块实例，避免共享 `browser/page` 状态；单账号注册、重试、grok2api、CPA 和结果统计仍复用原有逻辑。
+- 账号、邮箱凭据、pending 和 CPA 失败日志的共享追加写入使用文件锁保护；CPA 浏览器在所有 worker 结束后统一清理。
+
+### WebUI（可选）
+
+WebUI 是一个本地 FastAPI 薄控制层，与 GUI / CLI 共用同一份 `config.json` 和同一套 `run_registration_common()` 注册流程；串行、多线程、grok2api、CPA、pending 与浏览器生命周期仍由原有模块负责。
+
+安装可选 Web 依赖：
+
+```bash
+python -m pip install -r requirements-web.txt
+```
+
+启动：
+
+```bash
+python -m web.server
+```
+
+然后访问 `http://127.0.0.1:8092`。WebUI 默认只监听本机地址，提供配置、开始/停止、批次状态和实时日志。任务运行期间配置表单会被锁定，建议同一时间只从 GUI、CLI、WebUI 中选择一个入口启动注册任务。
+
 ### 基础配置
 
 | 配置项 | 说明 |
