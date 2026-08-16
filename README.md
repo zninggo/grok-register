@@ -1,13 +1,15 @@
 <div align="center">
 
-[![Grok Register — GUI and CLI registration automation toolkit](assets/banner.png)](https://github.com/AaronL725/grok-register)
+[![Grok Register — GUI, CLI and WebUI registration automation toolkit](assets/banner.png)](https://github.com/AaronL725/grok-register)
 
-Grok Register 是一个面向自动化流程研究、测试环境验证和个人学习的 Python 工具。项目提供 GUI / CLI、四种临时邮箱接入、Chromium 页面自动化、账号安全落盘、pending 恢复、grok2api token 入池，以及可选的 CPA xAI OIDC 凭证导出。
+Grok Register 是一个面向自动化流程研究、测试环境验证和个人学习的 Python 工具。项目提供 GUI / CLI / WebUI、四种临时邮箱、可选 1–8 线程并发与账号级代理池，并集成 Chromium 页面自动化、账号安全落盘、pending 恢复、grok2api token 入池和可选 CPA xAI OIDC 凭证导出。
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/Python-3.9%2B-3776AB.svg" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/Interface-GUI%20%2B%20CLI-success.svg" alt="GUI + CLI">
+  <img src="https://img.shields.io/badge/Interface-GUI%20%2B%20CLI%20%2B%20WebUI-success.svg" alt="GUI + CLI + WebUI">
+  <img src="https://img.shields.io/badge/Parallel-1--8%20Workers-6f42c1.svg" alt="1-8 Workers">
+  <img src="https://img.shields.io/badge/Proxy-direct%20%2F%20single%20%2F%20pool-orange.svg" alt="Proxy: direct / single / pool">
   <img src="https://img.shields.io/badge/Browser-Chromium%2FChrome-4285F4.svg" alt="Chromium/Chrome">
   <a href="http://makeapullrequest.com"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
   <a href="https://linux.do"><img src="https://img.shields.io/badge/Join-linux.do-orange" alt="linux.do"></a>
@@ -32,77 +34,71 @@ Grok Register 是一个面向自动化流程研究、测试环境验证和个人
 
 ## 目录
 
-- [当前功能](#当前功能)
-- [运行流程](#运行流程)
-- [环境要求](#环境要求)
-- [安装](#安装)
-- [配置](#配置)
+- [项目功能](#项目功能)
+- [快速开始](#快速开始)
 - [运行方式](#运行方式)
+- [配置说明](#配置说明)
+- [代理与代理池](#代理与代理池)
+- [可选多线程注册](#可选多线程注册)
+- [grok2api token 入池](#grok2api-token-入池)
+- [CPA / xAI OIDC 导出](#cpa--xai-oidc-导出)
 - [输出与 pending 恢复](#输出与-pending-恢复)
-- [稳定性与安全机制](#稳定性与安全机制)
-- [项目架构](#项目架构)
+- [项目结构](#项目结构)
 - [常见问题](#常见问题)
 - [License](#license)
 - [Acknowledgments](#acknowledgments)
 - [Star History](#star-history)
 
-## 当前功能
+## 项目功能
 
-- 使用真实 Chromium / Chrome 页面完成注册、验证码、资料填写、Turnstile 与 SSO cookie 获取。
-- 支持四种邮箱服务：
-  - DuckMail
-  - YYDS
-  - Cloudflare 临时邮箱
-  - Cloud Mail 无人收件模式
-- 成功账号实时写入 `accounts_*.txt`。
-- 主结果写入失败时自动写入 `*.pending.jsonl`，可稍后幂等恢复。
-- 支持将 SSO token 写入 grok2api 本地池和远端池。
-- 支持注册成功后可选导出 CLIProxyAPI 使用的 CPA xAI OIDC 凭证。
-- 支持注册后尝试开启 NSFW；失败不会影响账号保存。
-- 支持浏览器重启、卡住重试、邮箱更换、定期内存清理和安全取消。
-- GUI / CLI 均展示四项批次状态：
-  - 成功
-  - 失败
-  - 待恢复
-  - 后处理警告
+Grok Register 使用真实 Chromium / Chrome 完成注册流程，并把 GUI、CLI 和 WebUI 都接到同一套注册核心上。
 
-## 运行流程
+主要功能：
 
-单个账号的主要流程如下：
+- 自动打开注册页、提交邮箱、轮询验证码、填写资料并获取 SSO cookie。
+- 支持 **DuckMail / YYDS / Cloudflare 临时邮箱 / Cloud Mail** 四种邮箱来源。
+- 支持 **GUI / CLI / WebUI** 三种操作入口。
+- 支持可选 **1–8 线程并发注册**；默认关闭。
+- 支持 `direct / single / pool` 代理模式、健康检查、冷却、订阅、固定/旋转节点和账号级稳定 Proxy Lease。
+- 代理池可混合解析 **HTTP / HTTPS / SOCKS / VLESS / VMess / Trojan / Hysteria2 / TUIC** 节点。
+- 支持注册后尝试开启 NSFW；失败不会丢失已经注册成功的账号。
+- 支持把 SSO token 写入 grok2api 本地池或远端池。
+- 支持可选 CPA xAI OIDC 凭证导出与 CLIProxyAPI hotload。
+- 成功账号实时落盘；主结果写入失败时会进入 `*.pending.jsonl`，可稍后幂等恢复。
+- 支持停止任务、浏览器重启、邮箱重试、运行时清理和后处理错误隔离。
+
+单个账号的主要流程：
 
 ```text
 打开注册页
-  → 创建临时邮箱并提交
-  → 轮询并填写验证码
+  → 创建邮箱并提交
+  → 获取并填写验证码
   → 填写资料
-  → 等待 SSO cookie
+  → 获取 SSO cookie
   → 可选开启 NSFW
   → 保存账号
   → 可选写入 grok2api
   → 可选导出 CPA/OIDC
 ```
 
-账号已经注册成功后，token 入池或 CPA 导出属于**附加后处理**。附加功能失败只会增加“后处理警告”，不会把已经保存的账号重新统计为注册失败。
+> grok2api 入池和 CPA/OIDC 都属于注册后的附加后处理。后处理失败会记录警告，但不会把已经保存成功的账号重新算作注册失败。
 
-## 环境要求
+## 快速开始
+
+### 1. 环境要求
 
 - Python **3.9+**
 - Google Chrome 或 Chromium
 - 可访问注册页面和所选邮箱 API 的网络环境
-- GUI 模式需要 Tkinter；没有 Tkinter 时可使用 CLI 模式
+- GUI 需要 Tkinter；没有 Tkinter 时可以使用 CLI 或 WebUI
+- **仅当使用 VLESS / VMess / Trojan / Hysteria2 / TUIC 节点时需要 sing-box**；HTTP/SOCKS 继续使用项目原生代理实现
 
-## 安装
-
-克隆仓库：
+### 2. 安装
 
 ```bash
 git clone https://github.com/AaronL725/grok-register.git
 cd grok-register
-```
 
-建议创建虚拟环境：
-
-```bash
 python -m venv .venv
 ```
 
@@ -116,7 +112,7 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-安装依赖：
+安装核心依赖：
 
 ```bash
 python -m pip install --upgrade pip
@@ -133,89 +129,136 @@ cp config.example.json config.json
 copy config.example.json config.json
 ```
 
-然后编辑 `config.json`。该文件包含 API Key、JWT、代理和远端服务密钥等。
-
-## 配置
-
-配置校验分为两层：
-
-1. **结构校验**：检查类型、枚举、URL 和数值范围。GUI 启动时只执行这一层，因此旧配置缺少当前服务所需字段时仍可打开界面修改。
-2. **运行校验**：点击“开始注册”或启动 CLI 任务时，检查当前启用功能所需的配置。
-
-### 可选多线程注册（可选）
-
-多线程默认**关闭**，需要时可配置：
+### 3. 先完成最小配置
 
 ```json
 {
-  "multi_thread_enabled": true,
-  "multi_thread_workers": 4
+  "email_provider": "cloudflare",
+  "register_count": 1,
+  "proxy_mode": "auto",
+  "proxy": "",
+  "multi_thread_enabled": false
 }
 ```
 
-- `multi_thread_enabled`: 是否启用并发注册，默认 `false`。
-- `multi_thread_workers`: 配置线程数，默认 `4`，允许 `1`–`8`；实际 worker 数不会超过本次注册数量。
-- GUI 可通过“启用多线程”开关和线程数输入框设置；CLI 继续读取同一份 `config.json`。
-- 并发模式为每个 worker 创建独立的邮箱模块实例与注册浏览器模块实例，避免共享 `browser/page` 状态；单账号注册、重试、grok2api、CPA 和结果统计仍复用原有逻辑。
-- 账号、邮箱凭据、pending 和 CPA 失败日志的共享追加写入使用文件锁保护；CPA 浏览器在所有 worker 结束后统一清理。
+然后根据 `email_provider` 填写对应邮箱配置。完整字段见 [`config.example.json`](config.example.json)。
 
-### WebUI（可选）
+### 4. 启动
 
-WebUI 是一个本地 FastAPI 薄控制层，与 GUI / CLI 共用同一份 `config.json` 和同一套 `run_registration_common()` 注册流程；串行、多线程、grok2api、CPA、pending 与浏览器生命周期仍由原有模块负责。
+GUI：
 
-安装可选 Web 依赖：
+```bash
+python grok_register_ttk.py
+```
+
+WebUI：
 
 ```bash
 python -m pip install -r requirements-web.txt
-```
-
-启动：
-
-```bash
 python -m web.server
 ```
 
-然后访问 `http://127.0.0.1:8092`。WebUI 默认只监听本机地址，提供配置、开始/停止、批次状态和实时日志。任务运行期间配置表单会被锁定，建议同一时间只从 GUI、CLI、WebUI 中选择一个入口启动注册任务。
+访问：
+
+```text
+http://127.0.0.1:8092
+```
+
+> GUI、CLI 和 WebUI 共用同一个 `config.json` 和同一套注册逻辑。建议同一时间只使用一个入口启动任务。
+
+## 运行方式
+
+### WebUI（可选）
+
+```bash
+python -m pip install -r requirements-web.txt
+python -m web.server
+```
+
+WebUI 默认监听 `127.0.0.1:8092`，提供中英双语配置、开始/停止、批次统计、实时日志、代理池节点状态、订阅解析统计、重新加载和手动测试。
+
+### GUI
+
+```bash
+python grok_register_ttk.py
+```
+
+GUI 可以直接配置主要邮箱、代理、代理池、多线程和注册参数，然后点击“开始注册”。
+
+### CLI
+
+以下三种写法等价：
+
+```bash
+python grok_register_ttk.py cli
+python grok_register_ttk.py start
+python grok_register_ttk.py --cli
+```
+
+CLI 读取 `config.json`，通过校验后提示：
+
+```text
+> start
+```
+
+输入 `start` 才正式运行；按 `Ctrl+C` 可请求停止。
+
+> CLI 只是省略 Tk GUI，注册页面仍然会使用真实 Chromium / Chrome。
+
+## 配置说明
+
+项目启动时做结构校验，真正开始任务时再检查当前启用功能所需字段，因此可以先打开 GUI / WebUI 再逐步配置。
 
 ### 基础配置
 
 | 配置项 | 说明 |
 | --- | --- |
-| `email_provider` | `duckmail`、`yyds`、`cloudflare` 或 `cloudmail` |
-| `register_count` | 本批次目标数量，允许范围由配置校验控制 |
-| `proxy` | 主注册流程代理，可留空 |
+| `email_provider` | `duckmail` / `yyds` / `cloudflare` / `cloudmail` |
+| `register_count` | 本批次注册数量 |
 | `enable_nsfw` | 注册后是否尝试开启 NSFW |
-| `user_agent` | 浏览器和请求使用的 User-Agent |
+| `user_agent` | Chromium 和请求使用的 User-Agent |
+| `proxy_mode` | `auto` / `direct` / `single` / `pool` |
+| `proxy` | 单代理地址；`auto` 模式下留空即直连 |
+| `multi_thread_enabled` | 是否启用并发注册，默认 `false` |
+| `multi_thread_workers` | 并发 worker 数，范围 `1–8` |
 
-### DuckMail
+### 邮箱服务
+
+#### DuckMail
+
+```json
+{
+  "email_provider": "duckmail",
+  "duckmail_api_key": ""
+}
+```
+
+#### YYDS
+
+```json
+{
+  "email_provider": "yyds",
+  "yyds_api_key": "",
+  "yyds_jwt": ""
+}
+```
+
+`yyds_api_key` 和 `yyds_jwt` 至少填写一个。
+
+#### Cloudflare 临时邮箱
+
+常用字段：
 
 | 配置项 | 说明 |
 | --- | --- |
-| `duckmail_api_key` | 可选 DuckMail API Key |
-
-### YYDS
-
-| 配置项 | 说明 |
-| --- | --- |
-| `yyds_api_key` | YYDS API Key |
-| `yyds_jwt` | YYDS JWT |
-
-选择 `yyds` 时，`yyds_api_key` 和 `yyds_jwt` 至少配置一个，否则运行校验会直接拒绝启动。
-
-### Cloudflare 临时邮箱
-
-| 配置项 | 说明 |
-| --- | --- |
-| `cloudflare_api_base` | Cloudflare 临时邮箱 API 根地址 |
+| `cloudflare_api_base` | 邮箱 API 根地址 |
 | `cloudflare_api_key` | 匿名模式留空；admin 模式填写 `ADMIN_PASSWORD` |
-| `cloudflare_auth_mode` | `none`、`bearer`、`x-api-key`、`x-admin-auth` 或 `query-key` |
-| `cloudflare_path_domains` | 域名列表路径，默认 `/api/domains` |
-| `cloudflare_path_accounts` | 创建邮箱路径，默认 `/api/new_address` |
-| `cloudflare_path_token` | token 路径，默认 `/api/token` |
-| `cloudflare_path_messages` | 收件列表路径，默认 `/api/mails` |
-| `defaultDomains` | 默认收信域名；多个域名用英文逗号分隔并轮换使用 |
+| `cloudflare_auth_mode` | `none` / `bearer` / `x-api-key` / `x-admin-auth` / `query-key` |
+| `cloudflare_path_accounts` | 创建邮箱接口 |
+| `cloudflare_path_messages` | 邮件列表接口 |
+| `defaultDomains` | 默认收信域名；多个域名用英文逗号分隔 |
 
-#### 匿名创建模式
+匿名创建示例：
 
 ```json
 {
@@ -223,17 +266,13 @@ python -m web.server
   "cloudflare_api_base": "https://你的-worker-api-域名",
   "cloudflare_api_key": "",
   "cloudflare_auth_mode": "none",
-  "cloudflare_path_domains": "/api/domains",
   "cloudflare_path_accounts": "/api/new_address",
-  "cloudflare_path_token": "/api/token",
   "cloudflare_path_messages": "/api/mails",
   "defaultDomains": "example.com"
 }
 ```
 
-#### Admin 创建模式
-
-当匿名 `/api/new_address` 受 Turnstile 限制时，可使用：
+Admin 创建示例：
 
 ```json
 {
@@ -247,29 +286,7 @@ python -m web.server
 }
 ```
 
-Admin 密码只用于创建邮箱。读取邮件仍使用创建接口返回的邮箱 JWT。
-
-可先使用调试脚本验证接口：
-
-```bash
-python cf_mail_debug.py \
-  --api-base "https://你的-worker-api-域名" \
-  --auth-mode x-admin-auth \
-  --api-key "你的 ADMIN_PASSWORD" \
-  --create-path /admin/new_address \
-  --domain "example.com"
-```
-
-### Cloud Mail 无人收件模式
-
-| 配置项 | 说明 |
-| --- | --- |
-| `cloudmail_api_base` | Cloud Mail 站点根地址 |
-| `cloudmail_public_token` | 公共收件 API Token |
-| `cloudmail_domains` | 无人收件域名，多个域名用英文逗号分隔 |
-| `cloudmail_path_messages` | 默认 `/api/public/emailList` |
-
-示例：
+#### Cloud Mail 无人收件模式
 
 ```json
 {
@@ -281,23 +298,122 @@ python cf_mail_debug.py \
 }
 ```
 
-Cloud Mail 模式直接生成随机地址，不预先创建邮箱账户。公共 Token 只从 `config.json` 读取，不会作为邮箱 credential 写入 `mail_credentials.txt`。
+## 代理与代理池
 
-### grok2api token 池
+默认：
 
-| 配置项 | 说明 |
-| --- | --- |
-| `grok2api_auto_add_local` | 是否写入本地 token 池 |
-| `grok2api_local_token_file` | 本地 `token.json` 路径；留空使用项目默认路径 |
-| `grok2api_pool_name` | `ssoBasic` 或 `ssoSuper` |
-| `grok2api_auto_add_remote` | 是否写入远端 token 池 |
-| `grok2api_remote_base` | 站点根地址、`/admin` 或 `/admin/api` 地址 |
-| `grok2api_remote_app_key` | 旧版远端管理 API 的 app key |
-| `grok2api_remote_admin_username` | 新版 `chenyme/grok2api` 管理员账号 |
-| `grok2api_remote_admin_password` | 新版 `chenyme/grok2api` 管理员密码 |
-| `grok2api_allow_legacy_full_save` | 是否允许旧版全量保存回退；默认关闭 |
+```json
+{
+  "proxy_mode": "auto",
+  "proxy": ""
+}
+```
 
-远端入池会根据凭据自动选择版本：填写 `app_key` 使用旧版 `/tokens/add`；填写管理员账号和密码则通过新版 `/api/admin/v1/accounts/web/import` 导入 Grok Web。两套凭据不能同时填写。新版管理请求默认直连，远程地址必须使用 HTTPS，本机地址可使用 HTTP。旧版全量保存默认关闭，以避免并发覆盖。
+`auto` 用于兼容传统单代理配置：`proxy` 为空时直连，非空时使用该代理。
+
+### 单代理
+
+原生代理：
+
+```json
+{
+  "proxy_mode": "single",
+  "proxy": "http://user:password@127.0.0.1:7890"
+}
+```
+
+`single` 也可以直接填写受支持的高级协议 URI；高级协议需要本机可执行的 `sing-box`。
+
+### 代理池
+
+```json
+{
+  "proxy_mode": "pool",
+  "proxy_fallback": "none",
+  "proxy_pool_file": "./proxies.txt",
+  "proxy_pool_subscription_url": "",
+  "proxy_pool_endpoint_mode": "auto",
+  "proxy_pool_max_concurrent_per_node": 1,
+  "proxy_protocol_backend": "auto",
+  "proxy_singbox_path": "",
+  "proxy_protocol_start_timeout_sec": 10
+}
+```
+
+代理源支持普通文本或整份 Base64 编码，解码后可以混合：
+
+```text
+http://...
+socks5://...
+vless://...
+vmess://...
+trojan://...
+hysteria2://...
+tuic://...
+```
+
+当前支持：
+
+- HTTP / HTTPS / SOCKS / SOCKS4 / SOCKS4A / SOCKS5 / SOCKS5H
+- VLESS / VMess / Trojan / Hysteria2 (`hy2`) / TUIC
+- 本地文件与 HTTP/HTTPS 订阅
+- 标准 Base64 与 URL-safe Base64 订阅
+- VLESS/VMess/Trojan 常见 TCP/WS/gRPC/HTTP/HTTPUpgrade/QUIC transport
+- VLESS TLS / uTLS / Reality 常见参数
+- 节点解析统计、健康探测、失败冷却和自动恢复
+- 固定/旋转入口、`{account}`、并发限制和账号级稳定 Proxy Lease
+
+高级协议采用 lazy runtime：只有节点实际被选中或测试时才启动 sing-box，并向现有注册流程提供 `http://127.0.0.1:<port>`；HTTP/SOCKS 节点不会启动 sing-box。没有活动 Lease 后对应 runtime 会停止。
+
+同一个账号 attempt 内，浏览器、邮箱、NSFW 和默认 CPA 保持同一个 Lease；邮箱重试不会中途更换代理。
+
+完整参数、协议映射、运行时和健康度规则见 [`docs/proxy-pool.md`](docs/proxy-pool.md)。
+
+## 可选多线程注册
+
+默认关闭：
+
+```json
+{
+  "multi_thread_enabled": false,
+  "multi_thread_workers": 4
+}
+```
+
+需要并发时：
+
+```json
+{
+  "multi_thread_enabled": true,
+  "multi_thread_workers": 4
+}
+```
+
+- worker 范围 `1–8`，实际数量不会超过 `register_count`。
+- 每个 worker 使用独立邮箱模块和浏览器运行状态。
+- 共享输出使用锁保护。
+- 代理健康状态由所有 worker 共享，但每个账号拥有独立 Proxy Lease。
+
+## grok2api token 入池
+
+所有入池功能都是可选的。
+
+### 本地池
+
+```json
+{
+  "grok2api_auto_add_local": true,
+  "grok2api_local_token_file": "",
+  "grok2api_pool_name": "ssoBasic"
+}
+```
+
+### 远端池
+
+远端支持两种凭据方式，二选一：
+
+1. `grok2api_remote_app_key`
+2. `grok2api_remote_admin_username` + `grok2api_remote_admin_password`
 
 ```json
 {
@@ -311,30 +427,16 @@ Cloud Mail 模式直接生成随机地址，不预先创建邮箱账户。公共
 }
 ```
 
-### CPA / xAI OIDC 导出
+两套远端凭据不能同时填写。远程地址要求 HTTPS；本机地址可以使用 HTTP。
 
-| 配置项 | 说明 |
-| --- | --- |
-| `cpa_export_enabled` | 是否在注册成功后导出 CPA xAI OIDC 凭证 |
-| `cpa_auth_dir` | 输出目录，默认 `./cpa_auths` |
-| `cpa_copy_to_hotload` | 是否复制到 CLIProxyAPI auth-dir |
-| `cpa_hotload_dir` | 热加载目录；仅导出开启且复制开启时必填 |
-| `cpa_base_url` | CPA 凭证中的 API Base URL |
-| `cpa_proxy` | CPA 专用代理；留空回退到主 `proxy` |
-| `cpa_headless` | CPA 浏览器是否无头；默认建议 `false` |
-| `cpa_force_standalone` | 是否使用独立 CPA 浏览器会话 |
-| `cpa_mint_timeout_sec` | 浏览器授权整体超时 |
-| `cpa_mint_cookie_inject` | 是否向 CPA 会话注入已取得的 cookie |
-| `cpa_oidc_request_timeout_sec` | Device Authorization 请求超时 |
-| `cpa_oidc_poll_timeout_sec` | 单次 token 轮询请求超时 |
-| `api_reverse_tools` | 可选外部 `cpa_xai` 包目录 |
-
-最小配置：
+## CPA / xAI OIDC 导出
 
 ```json
 {
   "cpa_export_enabled": true,
   "cpa_auth_dir": "./cpa_auths",
+  "cpa_copy_to_hotload": false,
+  "cpa_hotload_dir": "",
   "cpa_base_url": "https://cli-chat-proxy.grok.com/v1",
   "cpa_proxy": "",
   "cpa_headless": false,
@@ -343,179 +445,101 @@ Cloud Mail 模式直接生成随机地址，不预先创建邮箱账户。公共
 }
 ```
 
-CPA 浏览器直接复用 `browser_runtime.py` 的 Chromium options 和 `cpa_xai/proxyutil.py` 的代理桥，不会反向导入主程序或创建第二份主模块全局状态。
+- `cpa_copy_to_hotload=true` 时必须填写 `cpa_hotload_dir`。
+- 显式 `cpa_proxy` 始终优先。
+- 未配置 `cpa_proxy` 且当前账号使用 Proxy Lease 时，CPA 会继承同一个出口，包括高级协议对应的 localhost runtime。
+- CPA 导出失败只记录后处理警告，不会删除已保存账号。
 
-## 运行方式
+## 输出与 pending 恢复
 
-### GUI
+| 文件 / 目录 | 内容 |
+| --- | --- |
+| `accounts_*.txt` | 已成功保存的账号、密码和 SSO token |
+| `mail_credentials.txt` | 临时邮箱地址与邮箱凭据 |
+| `*.pending.jsonl` | 已注册但主结果文件未成功写入的账号 |
+| 本地 `token.json` | 可选 grok2api 本地 token 池 |
+| `cpa_auths/xai-*.json` | 可选 CPA xAI OIDC 凭证 |
+| `cpa_auths/cpa_auth_failed.txt` | CPA 导出失败记录 |
+| `screenshots/` | CPA 浏览器失败调试截图 |
 
-```bash
-python grok_register_ttk.py
-```
-
-GUI 启动时读取配置并执行结构校验。填写配置后点击“开始注册”，程序会执行完整运行校验，只保存一次配置，然后启动后台线程。
-
-每个新批次开始前，成功、失败、待恢复和后处理警告四项统计都会全部清零。
-
-### CLI
-
-以下命令等价：
-
-```bash
-python grok_register_ttk.py cli
-python grok_register_ttk.py start
-python grok_register_ttk.py --cli
-```
-
-CLI 读取 `config.json` 中的 `register_count`，通过运行校验后提示：
-
-```text
-> start
-```
-
-输入 `start` 才会开始。按 `Ctrl+C` 可请求停止并执行最终清理。
-
-> CLI 只是不启动 Tk GUI，注册过程仍会打开 Chromium / Chrome。
-
-### 恢复 pending 结果
+### 恢复 pending
 
 ```bash
 python grok_register_ttk.py retry-pending <pending文件> [输出文件]
 ```
 
-示例：
+恢复过程使用文件锁、去重和原子替换，重复执行不会重复写入已经恢复成功的同一账号。
 
-```bash
-python grok_register_ttk.py retry-pending accounts_20260715_120000.txt.pending.jsonl
-```
-
-指定其他输出文件：
-
-```bash
-python grok_register_ttk.py retry-pending \
-  accounts_20260715_120000.txt.pending.jsonl \
-  recovered_accounts.txt
-```
-
-程序会拒绝把 pending 输入文件本身作为输出文件。
-
-## 输出与 pending 恢复
-
-运行过程中可能生成：
-
-| 文件 | 内容 |
-| --- | --- |
-| `accounts_*.txt` | 已成功保存的账号、密码和 SSO token |
-| `mail_credentials.txt` | 临时邮箱地址与邮箱凭证 |
-| `*.pending.jsonl` | 已注册但主结果文件未成功写入的账号 |
-| `*.pending.jsonl.lock` | pending 恢复独占锁 |
-| 本地 `token.json` | 可选 grok2api 本地池 |
-| `cpa_auths/xai-*.json` | 可选 CPA xAI OIDC 凭证 |
-| `cpa_auths/cpa_auth_failed.txt` | CPA 导出失败记录 |
-| `screenshots/` | CPA 浏览器失败调试截图 |
-
-pending 恢复具有以下保护：
-
-- 使用 `filelock` 对同一 pending 文件加独占锁；
-- 读取、恢复、重写或删除 pending 文件均在锁内完成；
-- 主结果文件按 `email+sso` 去重；
-- 已存在的记录直接视为恢复成功；
-- pending 文件使用临时文件和原子替换更新；
-- 输入路径与输出路径相同会被拒绝。
-
-因此进程在“账号已追加、pending 尚未更新”之间中断后，重复执行恢复不会重复写入同一个账号。
-
-## 稳定性与安全机制
-
-### 批量流程
-
-- 邮箱验证码失败时可更换邮箱重试。
-- 页面流程卡住时按当前账号槽位重试，达到上限后才计为失败。
-- 每个账号之间重启或重新创建浏览器。
-- 每成功 5 个账号默认执行一次运行时清理。
-- 定期清理失败只记录警告，不修改账号统计。
-- 用户在账号间取消时设置批次 `cancelled` 状态并正常结束。
-- 最终清理异常不会覆盖原始任务异常。
-- GUI observer 异常不会终止批量流程。
-
-### 文件写入
-
-- 配置、本地 token 池和 pending 更新采用临时文件加原子替换。
-- 本地 token 池使用文件锁，损坏 JSON 不会被静默覆盖。
-- 已存在 token 会被去重。
-
-### 后处理隔离
-
-- 主账号保存完成后，token 入池和 CPA 导出分别捕获异常。
-- 一个后处理步骤失败不会阻止另一个步骤执行。
-- 后处理失败不会把账号重新归类为注册失败。
-
-## 项目架构
+## 项目结构
 
 ```text
 .
-├── grok_register_ttk.py       # GUI、CLI、参数入口和兼容适配层
-├── registration_flow.py       # GUI / CLI 唯一批量编排入口
-├── app_config.py              # 默认配置、加载保存、结构校验与运行校验
-├── account_outputs.py         # 账号输出、pending、token 池和原子写入
-├── mail_service.py            # DuckMail、YYDS、Cloudflare、Cloud Mail
-├── browser_runtime.py         # HTTP、代理和 Chromium options
-├── registration_browser.py    # 主注册浏览器生命周期与页面自动化
-├── cf_mail_debug.py           # Cloudflare 邮箱调试 CLI
-├── cpa_export.py              # CPA/OIDC 导出兼容入口
-├── cpa_xai/
-│   ├── browser_session.py     # CPA 浏览器创建、复用、cookie 与清理
-│   ├── browser_confirm.py     # 登录、授权页面与 mint 编排
-│   ├── oauth_device.py        # Device Authorization 与 token 轮询
-│   ├── proxyutil.py           # 项目唯一认证代理桥实现
-│   ├── mint.py                # 凭证 mint 流程
-│   ├── schema.py              # CPA 输出结构
-│   └── writer.py              # 凭证文件写入
+├── grok_register_ttk.py       # GUI / CLI 入口与主适配层
+├── registration_flow.py       # 串行批量注册编排
+├── registration_parallel.py   # 可选多线程协调器
+├── registration_browser.py    # 主注册浏览器流程
+├── browser_runtime.py         # HTTP、Chromium options 与代理适配
+├── proxy_pool.py              # 代理池、健康度、Lease、订阅与探测
+├── proxy_protocols.py         # HTTP/SOCKS/VLESS/VMess/Trojan/HY2/TUIC 订阅解析
+├── proxy_protocol_runtime.py  # 高级协议 lazy sing-box → localhost HTTP 适配
+├── mail_service.py            # 四种邮箱服务
+├── app_config.py              # 默认配置、校验、加载与保存
+├── account_outputs.py         # 账号、pending 与 token 输出
+├── cpa_export.py              # CPA/OIDC 导出入口
+├── cpa_xai/                   # CPA 浏览器、OAuth、代理桥与凭证写入
+├── web/
+│   ├── server.py              # FastAPI WebUI 控制层
+│   ├── index.html             # WebUI 页面
+│   ├── proxy-pool.js          # 代理池 WebUI 交互
+│   └── proxy-pool.css         # 代理池 WebUI 样式
+├── docs/proxy-pool.md         # 代理池详细说明
 ├── config.example.json        # 完整配置示例
-├── requirements.txt           # Python 依赖
-├── tests/                     # 单元与兼容回归测试
-├── turnstilePatch/            # 浏览器扩展资源
-├── assets/                    # README 资源
-└── README.md
+├── requirements.txt           # 核心依赖
+├── requirements-web.txt       # WebUI 可选依赖
+└── tests/                     # 单元与兼容回归测试
 ```
 
 ## 常见问题
 
 ### CLI 为什么仍然打开浏览器？
 
-CLI 仅省略 Tk GUI。注册页交互、Turnstile、验证码提交和 SSO cookie 获取仍依赖真实 Chromium 环境。
+CLI 只是不启动 Tk GUI。注册页交互、验证码提交和 SSO cookie 获取仍依赖真实 Chromium / Chrome。
 
 ### GUI 无法启动怎么办？
 
-确认当前 Python 包含 Tkinter。Linux 发行版可能需要单独安装系统包，例如 `python3-tk`。也可以改用：
+确认 Python 环境包含 Tkinter。Linux 发行版可能需要单独安装 `python3-tk`。也可以改用 CLI 或 WebUI。
 
-```bash
-python grok_register_ttk.py cli
-```
+### 为什么高级协议节点显示 unavailable？
 
-### 为什么配置文件不完整时 GUI 仍能打开？
+VLESS / VMess / Trojan / Hysteria2 / TUIC 需要本地 sing-box。默认从系统 `PATH` 查找，也可以在 WebUI / `config.json` 设置 `proxy_singbox_path`。HTTP/SOCKS 不受影响。
 
-这是预期行为。GUI 启动只做结构校验，方便在界面中修正服务商配置；点击开始时才做运行校验。
+### 为什么某些 V2Ray 订阅节点会被跳过？
 
-### 为什么账号成功数少于实际注册完成数？
+WebUI 会显示订阅协议数量和解析错误。无法映射的 transport 或无效 URI 会只跳过对应节点，不影响同一订阅里的其他有效节点。详细映射范围见 [`docs/proxy-pool.md`](docs/proxy-pool.md)。
 
-“成功”表示账号注册完成且主结果文件已经保存。注册完成但主文件写入失败的账号会显示在“待恢复”，并写入 pending 文件。
+### 为什么配置文件不完整时 GUI / WebUI 仍能打开？
 
-### 什么是后处理警告？
+配置保存和运行校验分开。界面允许先打开并编辑配置，开始注册时才检查当前启用服务所需字段。
 
-账号已经保存，但 grok2api 入池或 CPA 导出至少一项失败。账号本身仍属于成功，不需要重新注册。
+### 注册成功后 grok2api 或 CPA 失败怎么办？
+
+账号本身仍然属于成功。此类错误只计入“后处理警告”。
 
 ### NSFW 开启失败会丢失账号吗？
 
-不会。NSFW 是可选步骤，失败会记录警告并继续保存账号。
+不会。NSFW 是可选步骤，失败后仍会继续保存账号。
 
-### 远端 grok2api 为什么拒绝旧版全量写入？
+### 代理池为什么显示用户名和密码？
 
-全量读改写在多进程环境中可能覆盖其他实例刚写入的 token。项目默认只接受增量接口；显式允许旧版回退时仍要求 ETag 并使用条件写入。
+当前 WebUI 按个人部署场景设计，会显示完整代理节点和认证信息。不要把 WebUI 暴露到不受信任的网络环境。
 
-### CPA 热加载目录为什么没有配置也能启动？
+### 如何查看代理池更详细的参数？
 
-只有同时启用 `cpa_export_enabled=true` 和 `cpa_copy_to_hotload=true` 时，`cpa_hotload_dir` 才是必填项。
+参见 [`docs/proxy-pool.md`](docs/proxy-pool.md)。
+
+### 为什么账号会进入 pending？
+
+表示注册已经完成，但主结果文件没有成功写入。使用 `retry-pending` 恢复即可，不需要重新注册。
 
 ## License
 

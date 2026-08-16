@@ -10,15 +10,17 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 import grok_register_ttk as engine
 
 ROOT = Path(__file__).resolve().parent.parent
 INDEX_HTML = Path(__file__).resolve().parent / "index.html"
+PROXY_POOL_JS = Path(__file__).resolve().parent / "proxy-pool.js"
+PROXY_POOL_CSS = Path(__file__).resolve().parent / "proxy-pool.css"
 LOG_LIMIT = 2000
 
-app = FastAPI(title="grok-register WebUI", version="1.0")
+app = FastAPI(title="grok-register WebUI", version="1.2")
 
 _job_lock = threading.Lock()
 _job_thread: Optional[threading.Thread] = None
@@ -30,6 +32,7 @@ _job_state = {
     "fail": 0,
     "pending": 0,
     "warnings": 0,
+    "uncertain": 0,
     "cancelled": False,
     "started_at": None,
     "finished_at": None,
@@ -73,6 +76,7 @@ def _update_progress(batch: Any) -> None:
         _job_state["fail"] = int(batch.fail_count)
         _job_state["pending"] = int(batch.registered_unsaved_count)
         _job_state["warnings"] = int(batch.postprocess_warning_count)
+        _job_state["uncertain"] = int(getattr(batch, "uncertain_count", 0) or 0)
         _job_state["cancelled"] = bool(batch.cancelled)
 
 
@@ -104,7 +108,22 @@ def _run_job(count: int, controller: Any, accounts_file: str) -> None:
 
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(INDEX_HTML, headers={"Cache-Control": "no-store"})
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    if PROXY_POOL_CSS.is_file():
+        html = html.replace("</head>", '<link rel="stylesheet" href="/proxy-pool.css">\n</head>', 1)
+    if PROXY_POOL_JS.is_file():
+        html = html.replace("</body>", '<script src="/proxy-pool.js"></script>\n</body>', 1)
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/proxy-pool.js", include_in_schema=False)
+def proxy_pool_js():
+    return FileResponse(PROXY_POOL_JS, media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/proxy-pool.css", include_in_schema=False)
+def proxy_pool_css():
+    return FileResponse(PROXY_POOL_CSS, media_type="text/css", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/health")
@@ -143,6 +162,69 @@ async def put_config(request: Request):
         engine.save_config()
         result = dict(engine.config)
     return {"ok": True, "config": result}
+
+
+@app.get("/api/proxy-pool/status")
+def proxy_pool_status():
+    from proxy_pool import manager_snapshot
+    cfg = _load_config_if_idle()
+    return {"ok": True, **manager_snapshot(config=cfg)}
+
+
+@app.post("/api/proxy-pool/reload")
+def proxy_pool_reload():
+    from proxy_pool import get_manager
+    with _job_lock:
+        if _job_state["running"]:
+            raise HTTPException(status_code=409, detail="任务运行期间不能重新加载代理池")
+        engine.load_config()
+        try:
+            cfg = engine.validate_config_structure(dict(engine.config))
+            manager = get_manager(config=cfg, log=_append_log)
+            snapshot = manager.reload_sources(force=True)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _append_log("[*] 代理池已重新加载")
+    return {"ok": True, **snapshot}
+
+
+@app.post("/api/proxy-pool/test")
+def proxy_pool_test():
+    from proxy_pool import get_manager
+    with _job_lock:
+        if _job_state["running"]:
+            raise HTTPException(status_code=409, detail="任务运行期间不能手动测试代理池")
+        engine.load_config()
+        try:
+            cfg = engine.validate_config_structure(dict(engine.config))
+            manager = get_manager(config=cfg, log=_append_log)
+            manager.reload_sources(force=True)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    results = manager.probe_all(force=True)
+    _append_log("[*] 代理池测试完成: %s 个节点" % len(results))
+    return {"ok": True, "results": results, **manager.snapshot()}
+
+
+@app.post("/api/proxy-pool/preflight")
+def proxy_pool_preflight(node_id: str = Query(..., min_length=1)):
+    from proxy_pool import get_manager
+    with _job_lock:
+        if _job_state["running"]:
+            raise HTTPException(status_code=409, detail="任务运行期间不能执行注册路径预检")
+        engine.load_config()
+        try:
+            cfg = engine.validate_config_structure(dict(engine.config))
+            if not cfg.get("proxy_pool_preflight_enabled", True):
+                raise HTTPException(status_code=409, detail="注册路径预检已在配置中关闭")
+            manager = get_manager(config=cfg, log=_append_log)
+            result = manager.preflight_node(node_id)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _append_log("[*] 代理节点注册路径预检完成: %s" % node_id)
+    return {"ok": True, "result": result, **manager.snapshot()}
 
 
 @app.get("/api/status")
@@ -185,6 +267,7 @@ def start():
             "fail": 0,
             "pending": 0,
             "warnings": 0,
+            "uncertain": 0,
             "cancelled": False,
             "started_at": time.time(),
             "finished_at": None,
